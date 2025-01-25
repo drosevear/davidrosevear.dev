@@ -1,8 +1,8 @@
 /** @type {import("pliny/config").PlinyConfig } */
 const siteMetadata = {
-  title: 'davidrosevear.dev',
+  title: 'blog | davidrosevear.dev',
   author: 'David Rosevear',
-  headerTitle: 'davidrosevear.dev',
+  headerTitle: 'David Rosevear ✨',
   description: "David's engineering blog",
   language: 'en-uk',
   theme: 'system', // system, dark or light
@@ -19,7 +19,7 @@ const siteMetadata = {
   youtube: 'https://youtube.com',
   linkedin: 'https://www.linkedin.com',
   threads: 'https://www.threads.net',
-  instagram: 'https://www.instagram.com',
+  instagram: 'https://www.instagram.com/davidj_',
   medium: 'https://medium.com',
   bluesky: 'https://bsky.app/',
   locale: 'en-UK',
