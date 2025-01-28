@@ -13,15 +13,15 @@ const siteMetadata = {
   mastodon: 'https://mastodon.social/@mastodonuser',
   email: 'drosevear@me.com',
   github: 'https://github.com/drosevear',
-  x: 'https://twitter.com/x',
+  // x: 'https://twitter.com/x',
   // twitter: 'https://twitter.com/Twitter',
-  facebook: 'https://facebook.com',
-  youtube: 'https://youtube.com',
+  // facebook: 'https://facebook.com',
+  // youtube: 'https://youtube.com',
   linkedin: 'https://www.linkedin.com',
-  threads: 'https://www.threads.net',
+  // threads: 'https://www.threads.net',
   instagram: 'https://www.instagram.com/davidj_',
-  medium: 'https://medium.com',
-  bluesky: 'https://bsky.app/',
+  // medium: 'https://medium.com',
+  // bluesky: 'https://bsky.app/',
   locale: 'en-UK',
   // set to true if you want a navbar fixed to the top
   stickyNav: false,
@@ -49,11 +49,11 @@ const siteMetadata = {
     //   googleAnalyticsId: '', // e.g. G-XXXXXXX
     // },
   },
-  newsletter: {
-    // supports mailchimp, buttondown, convertkit, klaviyo, revue, emailoctopus, beehive
-    // Please add your .env file and modify it according to your selection
-    provider: 'buttondown',
-  },
+  // newsletter: {
+  //   // supports mailchimp, buttondown, convertkit, klaviyo, revue, emailoctopus, beehive
+  //   // Please add your .env file and modify it according to your selection
+  //   provider: 'buttondown',
+  // },
   comments: {
     // If you want to use an analytics provider you have to add it to the
     // content security policy in the `next.config.js` file.
