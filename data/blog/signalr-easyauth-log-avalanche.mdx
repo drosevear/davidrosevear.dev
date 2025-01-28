@@ -1,38 +1,49 @@
 ---
-title: SignalR and Easy Auth log avalanche
+title: SignalR and Easy Auth Log Avalanche
 date: '2025-01-28'
 tags: ['signalr', 'easy auth', 'log analytics', 'azure', 'asp.net', 'container apps']
 draft: true
 summary: Azure SignalR and the Easy Auth sidecar container may cause a barrage of logs and a hefty bill to follow
 ---
 
-A sample post with markdown.
+**TL;DR**: Upon SignalR reconnection, the browser sends a `/negotiate` request to the Container App and includes an unnecessary `Authorization` header whose value is not intended for the Easy Auth sidecar container.
 
-## Inline Highlighting
+## Some background
 
-Sample of inline highlighting `sum = parseInt(num1) + parseInt(num2)`
+The app that I refer to in this post is powered by an Azure Container app using Easy Auth along with Azure SignalR for messaging clients.
 
-## Code Blocks
+My colleagues noticed we'd been spending a frightening amount of money on Log Analytics. The tens of millions of logs were coming from a container called `http-auth`, a sidecar container deployed when Easy Auth is on. One of the many complaints that `http-auth` had looked something like:
 
-Some Javascript code
-
-```javascript
-var num1, num2, sum
-num1 = prompt('Enter first number')
-num2 = prompt('Enter second number')
-sum = parseInt(num1) + parseInt(num2) // "+" means "add"
-alert('Sum = ' + sum) // "+" means combine into a string
+```
+stdout F {
+  "TaskName": "MiddlewareWarning",
+  "Message": "JWT validation failed: Issuer validation failure; Audience validation failure; Key ID validation failure.",
+  "Level": 4,
+  "EventId": 5
+}
 ```
 
-Some Python code 🐍
+## The issue: client negotiation and the `http-auth` container
 
-```python
-def fib():
-    a, b = 0, 1
-    while True:            # First iteration:
-        yield a            # yield 0 to start with and then
-        a, b = b, a + b    # a will now be 1, and b will also be 1, (0 + 1)
+When making an initial connection, the client sends an HTTP `/negotiate` request to the SignalR hub that's hosted on the Container App, with the `AppServiceAuthSession` cookie as expected (for more on [Azure Container Apps, Easy Auth and .NET authentication](https://johnnyreilly.com/azure-container-apps-easy-auth-and-dotnet-authentication), [John Reilly](https://johnnyreilly.com) is your guy!). The hub replies, giving the client the SignalR service URL and an access token corresponding to the user's identity. This token is passed in the `Authorization` header for subsequent SignalR websocket requests. The access token is meant for the SignalR service and not the Container App.
 
-for index, fibonacci_number in zip(range(10), fib()):
-     print('{i:3}: {f:3}'.format(i=index, f=fibonacci_number))
+After this initial connection, if for whatever reason (inactivity, expired token, etc.) the client tries to reconnect (since we use .withAutomaticReconnect), the client once again sends a `/negotiate` request to the Container App, but this time with the SignalR access token included in the `Authorization header`. Since this request is headed for the container app, the Easy Auth sidecar notices the `Authorization` header and tries to validate its value, causing the noisy and expensive logs. The request makes it through though, since the `AppServiceAuthSession` cookie is still present.
+
+Significantly, this SignalR access token's claims don't match those that the Easy Auth sidecar container expects. For example, audience is expected to be the AD app client ID as opposed to the SignalR service URL. This token was never meant to be seen by Easy Auth, anyway.
+
+## The solution: don't negotiate with an access token
+
+The fix was to make sure that the client never bothers to add an Authorization header to a `/negotiate` request. Instead, we rely just on the `AppServiceAuthSession` cookie as usual. All we need in the SignalR client is `accessTokenFactory: () => ""`, thanks to Easy Auth. And so our client looks like so:
+
+```typescript
+const newConnection = new signalR.HubConnectionBuilder()
+  .withUrl('/api/hub', {
+    transport: signalR.HttpTransportType.WebSockets,
+    accessTokenFactory: () => '', // to prevent the client from sending an access token when negotiating a connection upon reconnect (auth is handled by the cookie + Easy Auth)
+  })
+  .configureLogging(signalR.LogLevel.Information)
+  .withAutomaticReconnect()
+  .build()
 ```
+
+And yay! Things cleared up! 🥳
