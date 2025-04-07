@@ -1,0 +1,92 @@
+---
+title: On-behalf-of auth and token store in Azure Container Apps with Easy Auth
+date: '2025-04-05'
+tags: ['on behalf of auth', 'easy auth', 'azure', 'token store', 'container apps', 'asp.net', '.net', obo auth]
+draft: true
+summary: On-behalf-of auth is great because it allows our app to make calls to services on the user's behalf. Implementing it in Azure Container Apps Easy Auth requires just a few tweaks to `authConfigs`
+---
+
+**TL;DR**: On-behalf-of auth is great because it allows our app to make calls to services on the user's behalf. In Azure Container Apps with Easy Auth, getting the necessary `X-MS-TOKEN-AAD-ID-TOKEN` header requires just a few tweaks to `authConfigs`. With this we can create an `OnBehalfOfCredential`.
+
+Some time ago, [John Reilly](https://johnnyreilly.com/) wrote about [getting .NET authentication to work nicely with Easy Auth](https://johnnyreilly.com/azure-container-apps-easy-auth-and-dotnet-authentication). He mentioned the lack of token support at the time, _"If there was a populated `X-MS-TOKEN-AAD-ACCESS-TOKEN` then it would unlock all manner of possibilities. Let's say I want to make use of the Graph API on behalf of my logged in user. I cannot."_ 
+
+Using more recent API versions though, we can set `authConfigs` in such a way to give us a [token store](https://learn.microsoft.com/en-us/azure/container-apps/token-store) and grant us the `X-MS-TOKEN-AAD-ID-TOKEN` header in each request!
+
+## The bits you need to make it work (a minimal example)
+
+In addition to your existing config inside the [`containerApps/authConfigs`](https://learn.microsoft.com/en-us/azure/templates/microsoft.app/containerapps/authconfigs?pivots=deployment-language-bicep) bicep template, we need the `login` and `validation` objects set inside the identity provider (`azureActiveDirectory` in this example, but similar config could work with certain other identity providers):
+
+```bicep
+      azureActiveDirectory: {
+        enabled: true
+        registration: {
+          // your existing config
+        }
+        login: {
+          loginParameters: [ 'scope=api://your-ad-app-id-uri/.default openid profile' ]
+        }
+        validation: {
+          allowedAudiences: [
+            'api://your-ad-app-id-uri'
+          ]
+          defaultAuthorizationPolicy: {
+            allowedApplications: []
+          }
+        }
+      }
+```
+
+ And importantly, we need the `login` object at the root – this is where we will configure the token store:
+
+```bicep
+login: {
+  // https://learn.microsoft.com/en-us/azure/container-apps/token-store
+  tokenStore: {
+    enabled: true
+    azureBlobStorage: {
+      blobContainerUri: 'https://${your-storage-account-name}.blob.${environment().suffixes.storage}/name-of-the-your-blob-container-for-the-token-store'
+      managedIdentityResourceId: 'managed-identity-id-of-your-container-app'
+    }
+  }
+}
+```
+
+Alternatively, if you'd like to use the Azure CLI:
+
+```bash
+az containerapp auth update \
+  --resource-group <RESOURCE_GROUP_NAME> \
+  --name <CONTAINER_APP_NAME> \
+  --sas-url-secret-name <SAS_SECRET_NAME> \
+  --token-store true
+```
+
+Now, in addition to `X-MS-CLIENT-PRINCIPAL`, we get the `X-MS-TOKEN-AAD-ID-TOKEN`! This is great because it allows our app to create on-behalf-of credentials to represent the user to other services that are called from our app. Say we want to call Graph on behalf of the user (from the [docs](https://learn.microsoft.com/en-us/graph/sdks/choose-authentication-providers?tabs=csharp#on-behalf-of-provider)):
+
+```csharp
+var scopes = new[] { "https://graph.microsoft.com/.default" };
+
+// Multi-tenant apps can use "common",
+// single-tenant apps must use the tenant ID from the Azure portal
+var tenantId = "common";
+
+// Values from app registration
+var clientId = "YOUR_CLIENT_ID";
+var clientSecret = "YOUR_CLIENT_SECRET";
+
+// using Azure.Identity;
+var options = new OnBehalfOfCredentialOption
+{
+    AuthorityHost = AzureAuthorityHosts.AzurePublicCloud,
+};
+
+// This is the incoming token to exchange using on-behalf-of flow
+var oboToken = "JWT_TOKEN_TO_EXCHANGE";
+
+var onBehalfOfCredential = new OnBehalfOfCredential(
+    tenantId, clientId, clientSecret, oboToken, options);
+
+var graphClient = new GraphServiceClient(onBehalfOfCredential, scopes);
+```
+
+And there you have it 😊
