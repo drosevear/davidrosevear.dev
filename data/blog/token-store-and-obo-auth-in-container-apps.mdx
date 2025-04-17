@@ -6,11 +6,11 @@ draft: false
 summary: On-behalf-of auth is great because it allows our app to make calls to services on the user's behalf. Implementing it in Azure Container Apps Easy Auth requires just a few tweaks to `authConfigs`
 ---
 
-**TL;DR**: On-behalf-of auth is great because it allows our app to make calls to services on the user's behalf. In Azure Container Apps with Easy Auth, getting the necessary `X-MS-TOKEN-AAD-ID-TOKEN` header requires just a few tweaks to `authConfigs`. With this we can create an `OnBehalfOfCredential`.
+**TL;DR**: On-behalf-of auth is great because it allows our app to make calls to services on the user's behalf. In Azure Container Apps with Easy Auth, getting the necessary `X-MS-TOKEN-AAD-ACCESS-TOKEN` header requires just a few tweaks to `authConfigs`. With this we can create an `OnBehalfOfCredential`.
 
 Some time ago, [John Reilly](https://johnnyreilly.com/) wrote about [getting .NET authentication to work nicely with Easy Auth](https://johnnyreilly.com/azure-container-apps-easy-auth-and-dotnet-authentication). He mentioned the lack of token support at the time, _"If there was a populated `X-MS-TOKEN-AAD-ACCESS-TOKEN` then it would unlock all manner of possibilities. Let's say I want to make use of the Graph API on behalf of my logged in user. I cannot."_ 
 
-Using more recent API versions though, we can set `authConfigs` in such a way to give us a [token store](https://learn.microsoft.com/en-us/azure/container-apps/token-store) and grant us the `X-MS-TOKEN-AAD-ID-TOKEN` header in each request!
+Using more recent API versions though, we can set `authConfigs` in such a way to give us a [token store](https://learn.microsoft.com/en-us/azure/container-apps/token-store) and grant us the `X-MS-TOKEN-AAD-ACCESS-TOKEN` header in each request! The token store is supported from API version `2023-05-02-preview` although if you want to use a managed identity to authenticate with the token store (which is not mentioned in the docs at the time of writing) you'll need to use version `2024-10-02-preview` or later.
 
 ## The bits you need to make it work (a minimal example)
 
@@ -20,10 +20,12 @@ In addition to your existing config inside the [`containerApps/authConfigs`](htt
       azureActiveDirectory: {
         enabled: true
         registration: {
-          // your existing config
+          openIdIssuer: '${environment().authentication.loginEndpoint}${subscription().tenantId}/v2.0'
+          clientId: 'your-ad-app-client-id'
+          clientSecretSettingName: 'your-client-secret-name' // this secret reference must be set in `configuration/secrets` (https://learn.microsoft.com/en-us/azure/container-apps/manage-secrets?tabs=arm-template)
         }
         login: {
-          loginParameters: [ 'scope=api://your-ad-app-id-uri/.default openid profile' ]
+          loginParameters: [ 'scope=api://the-ad-app-uri-of-a-downstream-service-you-want-to-auth-with/.default openid profile' ] 
         }
         validation: {
           allowedAudiences: [
@@ -36,7 +38,9 @@ In addition to your existing config inside the [`containerApps/authConfigs`](htt
       }
 ```
 
- And importantly, we need the `login` object at the root – this is where we will configure the token store:
+Note that if you ommit `clientSecretSettingName`, you'll get the ID token but none of the access tokens.
+
+Then, importantly, we need the `login` object at the root – this is where we will configure the token store:
 
 ```bicep
 login: {
@@ -51,9 +55,9 @@ login: {
 }
 ```
 
-You'll notice above that your token store lives inside Blob Storage. And so you will need to bring your own Storage Account with a Blob Services container that'll be used as the token store.
+You'll notice above that your token store lives inside Blob Storage. And so you will need to bring your own Storage Account with a Blob Services container that'll be used as the token store. Be sure to grant permissions to your Container App over the Blob Storage container accordingly.
 
-Alternatively, if you'd like to use the Azure CLI:
+Alternatively, if you'd like to use the Azure CLI (which doesn't seem to support the use of a managed identity yet):
 
 ```bash
 az containerapp auth update \
@@ -63,7 +67,16 @@ az containerapp auth update \
   --token-store true
 ```
 
-Now, in addition to `X-MS-CLIENT-PRINCIPAL`, we get the `X-MS-TOKEN-AAD-ID-TOKEN`! This is great because it allows our app to create on-behalf-of credentials to represent the user to other services that are called from our app. Say we want to call Graph on behalf of the user (from the [docs](https://learn.microsoft.com/en-us/graph/sdks/choose-authentication-providers?tabs=csharp#on-behalf-of-provider)):
+Now, in addition to `X-MS-CLIENT-PRINCIPAL`, we get the headers:
+
+```
+X-MS-TOKEN-AAD-ACCESS-TOKEN
+X-MS-TOKEN-AAD-EXPIRES-ON
+X-MS-TOKEN-AAD-REFRESH-TOKEN
+X-MS-TOKEN-AAD-ID-TOKEN
+```
+
+This is great because it allows our app to create on-behalf-of credentials to represent the user to other services that are called from our app. Say we want to call Graph on behalf of the user (from the [docs](https://learn.microsoft.com/en-us/graph/sdks/choose-authentication-providers?tabs=csharp#on-behalf-of-provider)):
 
 ```csharp
 var scopes = new[] { "https://graph.microsoft.com/.default" };
