@@ -1,12 +1,17 @@
 {
-  "on-behalf-of-auth": 1,
-  "easy-auth": 2,
-  "azure": 2,
-  "token-store": 1,
-  "container-apps": 2,
-  "aspnet": 2,
-  "net": 1,
-  "obo-auth": 1,
+  "ai": 1,
+  "microsoft": 1,
+  "career": 1,
+  "generative-ai": 1,
+  "software-engineering": 1,
   "signalr": 1,
-  "log-analytics": 1
+  "easy-auth": 2,
+  "log-analytics": 1,
+  "azure": 2,
+  "aspnet": 2,
+  "container-apps": 2,
+  "on-behalf-of-auth": 1,
+  "token-store": 1,
+  "net": 1,
+  "obo-auth": 1
 }
